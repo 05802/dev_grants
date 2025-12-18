@@ -1,0 +1,43 @@
+name: Parse RFP
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_file:
+        description: 'Source file in application/source/ (e.g., "rfp.md")'
+        required: true
+        type: string
+
+jobs:
+  parse:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Configure Git
+        run: |
+          git config user.name "GrantOps Bot"
+          git config user.email "grantops@users.noreply.github.com"
+
+      - name: Parse RFP
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python scripts/parse.py "${{ inputs.source_file }}"
+
+      - name: Push changes
+        run: |
+          git push
