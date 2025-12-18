@@ -17,7 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from core.context import build_draft_context, read_file, list_sections, get_repo_root
-from core.llm import call_llm
+from core.llm import call_llm, list_agents, get_agent_config
 from core.git_ops import create_branch, commit_changes, get_next_version, generate_branch_name
 
 
@@ -35,12 +35,13 @@ def validate_section(section_id: str) -> bool:
     return has_meta or has_outline
 
 
-def generate_draft(section_id: str) -> str:
+def generate_draft(section_id: str, agent_name: str = "drafter") -> str:
     """
     Generate a draft for the specified section.
 
     Args:
         section_id: The section to draft
+        agent_name: The agent to use for drafting (default: "drafter")
 
     Returns:
         Generated draft content
@@ -48,17 +49,26 @@ def generate_draft(section_id: str) -> str:
     # Build the context
     context = build_draft_context(section_id)
 
-    # Extract system prompt from context (first part before ---)
-    parts = context.split("\n\n---\n\n")
-    system_prompt = parts[0] if parts else ""
-    user_prompt = "\n\n---\n\n".join(parts[1:]) if len(parts) > 1 else context
+    # Check if agent has system_prompt in config
+    agent_config = get_agent_config(agent_name)
+    has_agent_prompt = "system_prompt" in agent_config
+
+    if has_agent_prompt:
+        # Agent has its own system prompt, use entire context as user prompt
+        user_prompt = context
+        system_prompt = None  # Let call_llm use the agent's configured prompt
+    else:
+        # Fallback: Extract system prompt from context (legacy behavior)
+        parts = context.split("\n\n---\n\n")
+        system_prompt = parts[0] if parts else ""
+        user_prompt = "\n\n---\n\n".join(parts[1:]) if len(parts) > 1 else context
 
     # Add explicit instruction to user prompt
     user_prompt += "\n\n---\n\nPlease draft this section now, following the structure template exactly."
 
     # Call the LLM
     draft = call_llm(
-        agent_name="drafter",
+        agent_name=agent_name,
         prompt=user_prompt,
         system_prompt=system_prompt,
     )
@@ -88,7 +98,13 @@ def main():
     )
     parser.add_argument(
         "section_id",
+        nargs="?",
         help="Section identifier (e.g., 'project_narrative')"
+    )
+    parser.add_argument(
+        "--agent",
+        default="drafter",
+        help="Agent to use for drafting (default: drafter)"
     )
     parser.add_argument(
         "--branch",
@@ -104,8 +120,31 @@ def main():
         action="store_true",
         help="List available sections and exit"
     )
+    parser.add_argument(
+        "--list-agents",
+        action="store_true",
+        help="List available agents and exit"
+    )
 
     args = parser.parse_args()
+
+    # List agents mode
+    if args.list_agents:
+        agents = list_agents()
+        if agents:
+            print("Available agents:")
+            for name, config in agents.items():
+                desc = config.get("description", "No description")
+                model = config.get("model", "unknown")
+                temp = config.get("temperature", "N/A")
+                print(f"  {name}")
+                print(f"    Model: {model}")
+                print(f"    Temperature: {temp}")
+                print(f"    Description: {desc}")
+                print()
+        else:
+            print("No agents configured.")
+        return 0
 
     # List sections mode
     if args.list:
@@ -118,6 +157,11 @@ def main():
             print("No sections found. Run the parse workflow first, or create sections manually.")
         return 0
 
+    # Require section_id for drafting
+    if not args.section_id:
+        parser.print_help()
+        return 1
+
     # Validate section exists
     if not validate_section(args.section_id):
         print(f"Error: Section '{args.section_id}' not found or missing required files.")
@@ -126,10 +170,11 @@ def main():
         return 1
 
     print(f"Generating draft for section: {args.section_id}")
+    print(f"Using agent: {args.agent}")
 
     # Generate the draft
     try:
-        draft = generate_draft(args.section_id)
+        draft = generate_draft(args.section_id, agent_name=args.agent)
     except Exception as e:
         print(f"Error generating draft: {e}")
         return 1

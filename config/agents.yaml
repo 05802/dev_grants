@@ -1,24 +1,73 @@
 # GrantOps Agent Configuration
-# Maps task names to model settings for LLM calls
+#
+# Each agent is a combination of:
+# - model: LLM model identifier (supports any litellm-compatible model)
+# - temperature: Sampling temperature (0.0 = deterministic, 1.0 = creative)
+# - max_tokens: Maximum response length
+# - system_prompt: Either inline text or file reference (e.g., "file:config/prompts/drafter.md")
+# - description: Human-readable description
+#
+# System prompts can be:
+# 1. Inline: system_prompt: "You are a helpful assistant..."
+# 2. File reference: system_prompt: "file:config/prompts/custom.md"
+# 3. Omitted: Falls back to workflow-specific prompt loading
 
 agents:
+  # Parsing agents
   parser:
     model: "gpt-4o"
     temperature: 0.1
     max_tokens: 4096
+    system_prompt: "file:config/prompts/parser.md"
     description: "Extracts structure and requirements from RFP documents"
 
+  parser_claude:
+    model: "claude-sonnet-4-20250514"
+    temperature: 0.1
+    max_tokens: 4096
+    system_prompt: "file:config/prompts/parser.md"
+    description: "Claude-based RFP parser (alternative to GPT-4o)"
+
+  # Drafting agents
   drafter:
     model: "claude-sonnet-4-20250514"
     temperature: 0.7
     max_tokens: 4096
+    system_prompt: "file:config/prompts/drafter.md"
     description: "Generates section drafts based on outline and context"
 
+  drafter_creative:
+    model: "claude-sonnet-4-20250514"
+    temperature: 0.9
+    max_tokens: 4096
+    system_prompt: "file:config/prompts/drafter.md"
+    description: "More creative drafting with higher temperature"
+
+  drafter_gpt:
+    model: "gpt-4o"
+    temperature: 0.7
+    max_tokens: 4096
+    system_prompt: "file:config/prompts/drafter.md"
+    description: "GPT-4o based drafter (alternative to Claude)"
+
+  # Evaluation agents
   evaluator:
     model: "gpt-4o"
     temperature: 0.3
     max_tokens: 2048
     description: "Provides feedback on drafts across multiple dimensions"
+
+  evaluator_strict:
+    model: "gpt-4o"
+    temperature: 0.1
+    max_tokens: 2048
+    description: "Stricter evaluation with lower temperature"
+
+  evaluator_claude:
+    model: "claude-sonnet-4-20250514"
+    temperature: 0.3
+    max_tokens: 2048
+    description: "Claude-based evaluator (alternative perspective)"
 
 # Default settings (applied when not specified per-agent)
 defaults:

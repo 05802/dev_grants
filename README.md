@@ -55,6 +55,8 @@ Input the section ID (e.g., `project_narrative`). This will:
 - Create a new branch and Pull Request
 - Show the diff against any previous version
 
+**Optional:** Select a specific agent (e.g., `drafter_creative`, `drafter_gpt`) to use different models or parameters. Leave blank to use the default `drafter` agent.
+
 ### 7. Evaluate Drafts
 
 Go to **Actions** → **Evaluate Section** → **Run workflow**
@@ -63,6 +65,8 @@ Choose the section and evaluation mode:
 - **style** - Writing quality, clarity, style guide adherence
 - **logic** - Requirements coverage, internal consistency
 - **alignment** - Project narrative coherence, cross-section consistency
+
+**Optional:** Select a specific agent (e.g., `evaluator_strict`, `evaluator_claude`) for different evaluation perspectives.
 
 Optionally provide a PR number to post the evaluation as a comment.
 
@@ -93,22 +97,65 @@ Optionally provide a PR number to post the evaluation as a comment.
 
 ## Configuration
 
-### Model Selection (`config/agents.yaml`)
+### Agent Selection (`config/agents.yaml`)
+
+Agents combine models, parameters, and system prompts into named configurations:
 
 ```yaml
 agents:
+  # Parsing agents
   parser:
     model: "gpt-4o"
     temperature: 0.1
+    system_prompt: "file:config/prompts/parser.md"
+
+  parser_claude:
+    model: "claude-sonnet-4-20250514"
+    temperature: 0.1
+    system_prompt: "file:config/prompts/parser.md"
+
+  # Drafting agents
   drafter:
     model: "claude-sonnet-4-20250514"
     temperature: 0.7
+    system_prompt: "file:config/prompts/drafter.md"
+
+  drafter_creative:
+    model: "claude-sonnet-4-20250514"
+    temperature: 0.9  # Higher temperature for more creativity
+    system_prompt: "file:config/prompts/drafter.md"
+
+  drafter_gpt:
+    model: "gpt-4o"
+    temperature: 0.7
+    system_prompt: "file:config/prompts/drafter.md"
+
+  # Evaluation agents
   evaluator:
     model: "gpt-4o"
     temperature: 0.3
+
+  evaluator_strict:
+    model: "gpt-4o"
+    temperature: 0.1  # Lower temperature for stricter evaluation
+
+  evaluator_claude:
+    model: "claude-sonnet-4-20250514"
+    temperature: 0.3
 ```
 
-Change models by editing this file. Supports any model available through [litellm](https://docs.litellm.ai/docs/providers).
+**Agent flexibility:**
+- **Select agents in workflows:** Each workflow accepts an optional `agent` parameter to choose which agent to use
+- **Define custom agents:** Add new agents with any model, temperature, or system prompt
+- **System prompts:** Can be inline text or file references (`file:path/to/prompt.md`)
+- **Model support:** Any model available through [litellm](https://docs.litellm.ai/docs/providers)
+
+**List available agents:**
+```bash
+python scripts/draft.py --list-agents
+python scripts/parse.py --list-agents
+python scripts/evaluate.py --list-agents
+```
 
 ### Prompts (`config/prompts/`)
 
@@ -119,6 +166,8 @@ Customize LLM behavior by editing the prompt files:
 - `evaluator_alignment.md` - Alignment evaluation criteria
 - `parser.md` - RFP parsing instructions
 
+Note: When agents specify `system_prompt` in their config, that takes precedence.
+
 ## Workflow Details
 
 ### Draft Workflow
@@ -127,11 +176,12 @@ Customize LLM behavior by editing the prompt files:
 
 **Inputs:**
 - `section_id` (required): Section to draft
+- `agent` (optional): Agent to use (default: `drafter`)
 - `branch_name` (optional): Custom branch name
 
 **Process:**
 1. Loads project context, style guide, section metadata, and outline
-2. Calls the drafter LLM to generate content
+2. Calls the selected agent LLM to generate content
 3. Creates a new branch (`draft/{section_id}-v{n}`)
 4. Commits the draft and opens a Pull Request
 
@@ -144,6 +194,7 @@ Customize LLM behavior by editing the prompt files:
 **Inputs:**
 - `section_id` (required): Section to evaluate
 - `mode` (required): `style`, `logic`, or `alignment`
+- `agent` (optional): Agent to use (default: `evaluator`)
 - `pr_number` (optional): PR to comment on
 
 **Modes:**
@@ -159,6 +210,7 @@ Customize LLM behavior by editing the prompt files:
 
 **Inputs:**
 - `source_file` (required): File in `application/source/`
+- `agent` (optional): Agent to use (default: `parser`)
 
 **Process:**
 1. Reads the RFP document
@@ -180,14 +232,26 @@ pip install -r requirements.txt
 export OPENAI_API_KEY="..."
 export ANTHROPIC_API_KEY="..."
 
+# List available agents
+python scripts/draft.py --list-agents
+
 # Parse RFP (dry run)
 python scripts/parse.py rfp.md --dry-run
+
+# Parse with a specific agent
+python scripts/parse.py rfp.md --agent parser_claude
 
 # Generate draft (no commit)
 python scripts/draft.py project_narrative --no-commit
 
+# Generate draft with a specific agent
+python scripts/draft.py project_narrative --agent drafter_creative --no-commit
+
 # Evaluate draft
 python scripts/evaluate.py project_narrative --mode style
+
+# Evaluate with a specific agent
+python scripts/evaluate.py project_narrative --mode style --agent evaluator_strict
 ```
 
 ## Design Philosophy
