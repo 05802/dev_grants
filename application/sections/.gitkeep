@@ -1,0 +1,5 @@
+# This directory contains grant application sections
+# Each section has its own subdirectory with:
+#   - meta.yaml: Requirements, word limits, evaluation criteria
+#   - outline.md: Editable structure template
+#   - draft.md: Current draft (versioned via Git)

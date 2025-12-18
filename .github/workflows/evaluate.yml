@@ -1,0 +1,66 @@
+name: Evaluate Section
+
+on:
+  workflow_dispatch:
+    inputs:
+      section_id:
+        description: 'Section to evaluate (e.g., "project_narrative")'
+        required: true
+        type: string
+      mode:
+        description: 'Evaluation mode'
+        required: true
+        type: choice
+        options:
+          - style
+          - logic
+          - alignment
+      pr_number:
+        description: 'PR number to comment on (optional)'
+        required: false
+        type: string
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run evaluation
+        id: evaluate
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          # Run evaluation and capture output
+          python scripts/evaluate.py "${{ inputs.section_id }}" --mode "${{ inputs.mode }}" > evaluation_output.md
+
+          # Store in output variable for PR comment
+          {
+            echo 'evaluation<<EOF'
+            cat evaluation_output.md
+            echo EOF
+          } >> $GITHUB_OUTPUT
+
+      - name: Post evaluation as PR comment
+        if: inputs.pr_number != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment "${{ inputs.pr_number }}" --body-file evaluation_output.md
+
+      - name: Display evaluation
+        run: cat evaluation_output.md
