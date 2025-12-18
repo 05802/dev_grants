@@ -7,6 +7,11 @@ on:
         description: 'Source file in application/source/ (e.g., "rfp.md")'
         required: true
         type: string
+      agent:
+        description: 'Agent to use for parsing (e.g., "parser", "parser_claude")'
+        required: false
+        type: string
+        default: 'parser'
 
 jobs:
   parse:
@@ -36,7 +41,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          python scripts/parse.py "${{ inputs.source_file }}"
+          python scripts/parse.py "${{ inputs.source_file }}" --agent "${{ inputs.agent }}"
 
       - name: Push changes
         run: |

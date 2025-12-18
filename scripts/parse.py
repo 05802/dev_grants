@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import yaml
 
 from core.context import build_parse_context, get_repo_root
-from core.llm import call_llm
+from core.llm import call_llm, list_agents, get_agent_config
 from core.git_ops import commit_changes
 
 
@@ -36,12 +36,13 @@ def list_source_files() -> list[str]:
     ]
 
 
-def parse_rfp(source_file: str) -> list[dict]:
+def parse_rfp(source_file: str, agent_name: str = "parser") -> list[dict]:
     """
     Parse an RFP document and extract section structure.
 
     Args:
         source_file: Filename in application/source/
+        agent_name: The agent to use for parsing (default: "parser")
 
     Returns:
         List of section dictionaries
@@ -49,17 +50,26 @@ def parse_rfp(source_file: str) -> list[dict]:
     # Build context
     context = build_parse_context(source_file)
 
-    # Extract system prompt
-    parts = context.split("\n\n---\n\n")
-    system_prompt = parts[0] if parts else ""
-    user_prompt = "\n\n---\n\n".join(parts[1:]) if len(parts) > 1 else context
+    # Check if agent has system_prompt in config
+    agent_config = get_agent_config(agent_name)
+    has_agent_prompt = "system_prompt" in agent_config
+
+    if has_agent_prompt:
+        # Agent has its own system prompt, use entire context as user prompt
+        user_prompt = context
+        system_prompt = None  # Let call_llm use the agent's configured prompt
+    else:
+        # Fallback: Extract system prompt from context (legacy behavior)
+        parts = context.split("\n\n---\n\n")
+        system_prompt = parts[0] if parts else ""
+        user_prompt = "\n\n---\n\n".join(parts[1:]) if len(parts) > 1 else context
 
     # Add explicit instruction
     user_prompt += "\n\n---\n\nParse this RFP and return the JSON array of sections as specified."
 
     # Call the LLM
     response = call_llm(
-        agent_name="parser",
+        agent_name=agent_name,
         prompt=user_prompt,
         system_prompt=system_prompt,
     )
@@ -163,9 +173,19 @@ def main():
         help="Source file in application/source/ (e.g., 'rfp.md')"
     )
     parser.add_argument(
+        "--agent",
+        default="parser",
+        help="Agent to use for parsing (default: parser)"
+    )
+    parser.add_argument(
         "--list",
         action="store_true",
         help="List available source files and exit"
+    )
+    parser.add_argument(
+        "--list-agents",
+        action="store_true",
+        help="List available agents and exit"
     )
     parser.add_argument(
         "--no-commit",
@@ -179,6 +199,24 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # List agents mode
+    if args.list_agents:
+        agents = list_agents()
+        if agents:
+            print("Available agents:")
+            for name, config in agents.items():
+                desc = config.get("description", "No description")
+                model = config.get("model", "unknown")
+                temp = config.get("temperature", "N/A")
+                print(f"  {name}")
+                print(f"    Model: {model}")
+                print(f"    Temperature: {temp}")
+                print(f"    Description: {desc}")
+                print()
+        else:
+            print("No agents configured.")
+        return 0
 
     # List source files mode
     if args.list:
@@ -205,10 +243,11 @@ def main():
         return 1
 
     print(f"Parsing RFP: {args.source_file}")
+    print(f"Using agent: {args.agent}")
 
     # Parse the RFP
     try:
-        sections = parse_rfp(args.source_file)
+        sections = parse_rfp(args.source_file, agent_name=args.agent)
     except json.JSONDecodeError as e:
         print(f"Error: Failed to parse LLM response as JSON: {e}")
         return 1

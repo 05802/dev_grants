@@ -19,7 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from core.context import build_evaluate_context, read_file, list_sections, get_repo_root
-from core.llm import call_llm
+from core.llm import call_llm, list_agents, get_agent_config
 
 
 VALID_MODES = ["style", "logic", "alignment"]
@@ -31,13 +31,14 @@ def validate_section(section_id: str) -> bool:
     return draft_path.exists()
 
 
-def evaluate_draft(section_id: str, mode: str) -> str:
+def evaluate_draft(section_id: str, mode: str, agent_name: str = "evaluator") -> str:
     """
     Evaluate a draft in the specified mode.
 
     Args:
         section_id: The section to evaluate
         mode: Evaluation mode (style, logic, or alignment)
+        agent_name: The agent to use for evaluation (default: "evaluator")
 
     Returns:
         Evaluation feedback
@@ -45,17 +46,26 @@ def evaluate_draft(section_id: str, mode: str) -> str:
     # Build the context
     context = build_evaluate_context(section_id, mode)
 
-    # Extract system prompt from context (first part before ---)
-    parts = context.split("\n\n---\n\n")
-    system_prompt = parts[0] if parts else ""
-    user_prompt = "\n\n---\n\n".join(parts[1:]) if len(parts) > 1 else context
+    # Check if agent has system_prompt in config
+    agent_config = get_agent_config(agent_name)
+    has_agent_prompt = "system_prompt" in agent_config
+
+    if has_agent_prompt:
+        # Agent has its own system prompt, use entire context as user prompt
+        user_prompt = context
+        system_prompt = None  # Let call_llm use the agent's configured prompt
+    else:
+        # Fallback: Extract system prompt from context (legacy behavior)
+        parts = context.split("\n\n---\n\n")
+        system_prompt = parts[0] if parts else ""
+        user_prompt = "\n\n---\n\n".join(parts[1:]) if len(parts) > 1 else context
 
     # Add explicit instruction
     user_prompt += f"\n\n---\n\nPlease evaluate this draft using {mode} criteria."
 
     # Call the LLM
     evaluation = call_llm(
-        agent_name="evaluator",
+        agent_name=agent_name,
         prompt=user_prompt,
         system_prompt=system_prompt,
     )
@@ -101,13 +111,18 @@ def main():
     )
     parser.add_argument(
         "section_id",
+        nargs="?",
         help="Section identifier (e.g., 'project_narrative')"
     )
     parser.add_argument(
         "--mode",
         choices=VALID_MODES,
-        required=True,
         help="Evaluation mode: style, logic, or alignment"
+    )
+    parser.add_argument(
+        "--agent",
+        default="evaluator",
+        help="Agent to use for evaluation (default: evaluator)"
     )
     parser.add_argument(
         "--output",
@@ -120,8 +135,31 @@ def main():
         action="store_true",
         help="List available sections and exit"
     )
+    parser.add_argument(
+        "--list-agents",
+        action="store_true",
+        help="List available agents and exit"
+    )
 
     args = parser.parse_args()
+
+    # List agents mode
+    if args.list_agents:
+        agents = list_agents()
+        if agents:
+            print("Available agents:")
+            for name, config in agents.items():
+                desc = config.get("description", "No description")
+                model = config.get("model", "unknown")
+                temp = config.get("temperature", "N/A")
+                print(f"  {name}")
+                print(f"    Model: {model}")
+                print(f"    Temperature: {temp}")
+                print(f"    Description: {desc}")
+                print()
+        else:
+            print("No agents configured.")
+        return 0
 
     # List sections mode
     if args.list:
@@ -135,6 +173,15 @@ def main():
             print("No sections found with drafts.")
         return 0
 
+    # Require section_id and mode for evaluation
+    if not args.section_id:
+        parser.print_help()
+        return 1
+
+    if not args.mode:
+        print("Error: --mode is required for evaluation")
+        return 1
+
     # Validate section has a draft
     if not validate_section(args.section_id):
         print(f"Error: No draft found for section '{args.section_id}'.")
@@ -143,10 +190,11 @@ def main():
         return 1
 
     print(f"Evaluating section '{args.section_id}' in {args.mode} mode...")
+    print(f"Using agent: {args.agent}")
 
     # Run evaluation
     try:
-        evaluation = evaluate_draft(args.section_id, args.mode)
+        evaluation = evaluate_draft(args.section_id, args.mode, agent_name=args.agent)
     except Exception as e:
         print(f"Error during evaluation: {e}")
         return 1
